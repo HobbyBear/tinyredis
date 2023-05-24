@@ -84,11 +84,14 @@ func (s *Server) accept() {
 
 func (s *Server) handler() {
 	for {
+		time.Sleep(time.Minute)
 		events, err := s.Poll.WaitEvents()
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
+		fmt.Println("事件共多少个", len(events))
+
 		for _, e := range events {
 			file := os.NewFile(uintptr(e.FD), "")
 			netFD, err := net.FileConn(file)
@@ -101,7 +104,6 @@ func (s *Server) handler() {
 				fmt.Println("链接关闭", e.FD)
 				continue
 			}
-			time.Sleep(time.Minute)
 			fmt.Println("开始读取")
 			// 从read里读取消息
 			for {
@@ -116,7 +118,7 @@ func (s *Server) handler() {
 					fmt.Println("读取到字节", string(buf[:n]))
 				}
 			}
-
+			fmt.Println("读取结束")
 		}
 	}
 }

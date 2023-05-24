@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	EpollClose = uint32(syscall.EPOLLIN | syscall.EPOLLRDHUP)
+	EpollClose = uint32(syscall.EPOLLIN | syscall.EPOLLRDHUP | syscall.EPOLLHUP)
 )
 
 const (
@@ -30,7 +30,7 @@ func (p *poll) Open() error {
 
 func (p *poll) AddListen(fd int) error {
 	err := syscall.EpollCtl(p.EpollFd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{
-		Events: syscall.EPOLLIN | syscall.EPOLLPRI | syscall.EPOLLERR | syscall.EPOLLHUP | unix.EPOLLET | syscall.EPOLLRDHUP,
+		Events: syscall.EPOLLIN | syscall.EPOLLERR | unix.EPOLLET | syscall.EPOLLRDHUP,
 		Fd:     int32(fd),
 	})
 	if err != nil {
