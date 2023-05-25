@@ -1,6 +1,7 @@
 package netpoll
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"tinyredis/log"
+	"tinyredis/resp"
 )
 
 type Server struct {
@@ -98,25 +101,37 @@ func (s *Server) handler() {
 			conn := netFD.(net.Conn)
 			if e.Type == EventClose {
 				conn.Close()
-				fmt.Println("链接关闭", e.FD)
+				log.Debug("链接关闭 fd=%d", e.FD)
 				continue
 			}
-			time.Sleep(time.Minute)
-			fmt.Println("开始读取")
 			// 从read里读取消息
+			reader := bufio.NewReader(conn)
 			for {
-				buf := make([]byte, 10)
-				n, err := conn.Read(buf)
-				if err != nil {
-					fmt.Println("读取到了错误 ", err, n)
+				payloadCh := resp.ParseStream(reader)
+				payload := <-payloadCh
+				if payload.Err != nil {
+					log.Error("读取到命令行时发生错误 err=%s", payload.Err)
 					conn.Close()
 					break
 				}
-				if n > 0 {
-					fmt.Println("读取到字节", string(buf[:n]))
+				log.Debug("读取到命令\n data=%s", string(payload.Data.ToBytes()))
+				r, ok := payload.Data.(*resp.MultiBulkReply)
+				if !ok {
+					log.Error("require multi bulk protocol")
 				}
+				cmd := string(r.Args[0])
+				switch cmd {
+				case "set":
+					conn.Write(resp.MakeOkReply().ToBytes())
+				default:
+					log.Info("not support cmd=%s", cmd)
+				}
+				if reader.Buffered() == 0 {
+					break
+				}
+				log.Debug("缓冲区还没有读取完，继续读取下一个命令 bufferlen=%d", reader.Buffered())
 			}
-
+			log.Debug("读取完毕")
 		}
 	}
 }
