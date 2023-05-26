@@ -1,6 +1,7 @@
 package netpoll
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"net"
@@ -16,11 +17,11 @@ type Server struct {
 	addr     string
 	Handler  Handler
 	ListenFd int
-	ConnMap  map[int]net.Conn
+	ConnMap  map[int]*Conn
 }
 
 func NewServ(addr string, handler Handler) *Server {
-	return &Server{addr: addr, ConnMap: map[int]net.Conn{}, Handler: handler}
+	return &Server{addr: addr, ConnMap: map[int]*Conn{}, Handler: handler}
 }
 
 func (s *Server) Run() error {
@@ -89,7 +90,10 @@ func (s *Server) accept() {
 		if err != nil {
 			log.Error(err.Error())
 		}
-		s.ConnMap[nfd] = netFD.(net.Conn)
+		s.ConnMap[nfd] = &Conn{
+			conn:   netFD.(net.Conn),
+			reader: bufio.NewReader(netFD.(net.Conn)),
+		}
 		s.Handler.OnConnect(&HandlerMsg{Conn: netFD.(net.Conn), Fd: nfd})
 	}
 }
@@ -105,14 +109,14 @@ func (s *Server) handler() {
 			conn := s.ConnMap[int(e.FD)]
 			log.Debug("fd有数据到达 fd=%d", e.FD)
 			if IsReadableEvent(e.Type) {
-				err = s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+				err = s.Handler.OnReadable(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
 				if err != nil && err != io.EOF {
 					log.Error("read bytes fail err=%s", err)
 					continue
 				}
 				if err == io.EOF {
-					conn.Close()
-					s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+					conn.conn.Close()
+					s.Handler.OnClose(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
 					continue
 				}
 				if err != nil {
@@ -121,8 +125,8 @@ func (s *Server) handler() {
 				}
 			}
 			if IsClosedEvent(e.Type) {
-				conn.Close()
-				s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+				conn.conn.Close()
+				s.Handler.OnClose(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
 			}
 		}
 	}
