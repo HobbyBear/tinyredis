@@ -1,17 +1,14 @@
 package netpoll
 
 import (
-	"bufio"
 	"errors"
-	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 	"tinyredis/log"
-	"tinyredis/resp"
 )
 
 type Server struct {
@@ -19,10 +16,11 @@ type Server struct {
 	addr     string
 	Handler  Handler
 	ListenFd int
+	ConnMap  map[int]net.Conn
 }
 
-func NewServ(addr string) *Server {
-	return &Server{addr: addr}
+func NewServ(addr string, handler Handler) *Server {
+	return &Server{addr: addr, ConnMap: map[int]net.Conn{}, Handler: handler}
 }
 
 func (s *Server) Run() error {
@@ -56,11 +54,11 @@ func (s *Server) Run() error {
 		return err
 	}
 	s.Poll = &poll{EpollFd: epollFD}
-	s.Handler = Handler{}
 	s.ListenFd = listenFD
 	go s.accept()
 	go s.handler()
-	time.Sleep(time.Hour)
+	ch := make(chan int)
+	<-ch
 	return nil
 }
 
@@ -78,10 +76,21 @@ func (s *Server) accept() {
 		}
 		err = s.Poll.AddListen(nfd)
 		if err != nil {
-			fmt.Println(err)
-			return
+			log.Error(err.Error())
+			continue
 		}
-
+		file := os.NewFile(uintptr(nfd), "")
+		netFD, err := net.FileConn(file)
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
+		err = file.Close()
+		if err != nil {
+			log.Error(err.Error())
+		}
+		s.ConnMap[nfd] = netFD.(net.Conn)
+		s.Handler.OnConnect(&HandlerMsg{Conn: netFD.(net.Conn), Fd: nfd})
 	}
 }
 
@@ -89,49 +98,28 @@ func (s *Server) handler() {
 	for {
 		events, err := s.Poll.WaitEvents()
 		if err != nil {
-			fmt.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 		for _, e := range events {
-			file := os.NewFile(uintptr(e.FD), "")
-			netFD, err := net.FileConn(file)
-			if err != nil {
-				// 处理错误
-			}
-			conn := netFD.(net.Conn)
+			conn := s.ConnMap[int(e.FD)]
+			log.Debug("fd有数据到达 fd=%d", e.FD)
 			if e.Type == EventClose {
 				conn.Close()
-				log.Debug("链接关闭 fd=%d", e.FD)
+				s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
 				continue
 			}
 			// 从read里读取消息
-			reader := bufio.NewReader(conn)
-			for {
-				payloadCh := resp.ParseStream(reader)
-				payload := <-payloadCh
-				if payload.Err != nil {
-					log.Error("读取到命令行时发生错误 err=%s", payload.Err)
-					conn.Close()
-					break
-				}
-				log.Debug("读取到命令\n data=%s", string(payload.Data.ToBytes()))
-				r, ok := payload.Data.(*resp.MultiBulkReply)
-				if !ok {
-					log.Error("require multi bulk protocol")
-				}
-				cmd := string(r.Args[0])
-				switch cmd {
-				case "set":
-					conn.Write(resp.MakeOkReply().ToBytes())
-				default:
-					log.Info("not support cmd=%s", cmd)
-				}
-				if reader.Buffered() == 0 {
-					break
-				}
-				log.Debug("缓冲区还没有读取完，继续读取下一个命令 bufferlen=%d", reader.Buffered())
+			err = s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+			if err != nil && err != io.EOF {
+				log.Error("read bytes fail err=%s", err)
+				continue
 			}
-			log.Debug("读取完毕")
+			if err != nil {
+				conn.Close()
+				log.Error("read bytes fatal err=%s", err)
+				continue
+			}
 		}
 	}
 }
