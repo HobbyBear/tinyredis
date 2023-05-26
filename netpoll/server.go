@@ -104,21 +104,25 @@ func (s *Server) handler() {
 		for _, e := range events {
 			conn := s.ConnMap[int(e.FD)]
 			log.Debug("fd有数据到达 fd=%d", e.FD)
-			if e.Type == EventClose {
+			if IsReadableEvent(e.Type) {
+				err = s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+				if err != nil && err != io.EOF {
+					log.Error("read bytes fail err=%s", err)
+					continue
+				}
+				if err == io.EOF {
+					conn.Close()
+					s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+					continue
+				}
+				if err != nil {
+					log.Error("read bytes fatal err=%s", err)
+					continue
+				}
+			}
+			if IsClosedEvent(e.Type) {
 				conn.Close()
 				s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
-				continue
-			}
-			// 从read里读取消息
-			err = s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
-			if err != nil && err != io.EOF {
-				log.Error("read bytes fail err=%s", err)
-				continue
-			}
-			if err != nil {
-				conn.Close()
-				log.Error("read bytes fatal err=%s", err)
-				continue
 			}
 		}
 	}

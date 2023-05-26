@@ -4,15 +4,7 @@ import (
 	"fmt"
 	"golang.org/x/sys/unix"
 	"syscall"
-)
-
-const (
-	EpollClose = uint32(syscall.EPOLLIN | syscall.EPOLLRDHUP | syscall.EPOLLHUP)
-)
-
-const (
-	EventIn    = 1 // 数据流入
-	EventClose = 2 // 断开连接
+	"tinyredis/log"
 )
 
 type poll struct {
@@ -30,7 +22,7 @@ func (p *poll) Open() error {
 
 func (p *poll) AddListen(fd int) error {
 	err := syscall.EpollCtl(p.EpollFd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{
-		Events: syscall.EPOLLIN | syscall.EPOLLERR | unix.EPOLLET | syscall.EPOLLRDHUP,
+		Events: syscall.EPOLLIN | unix.EPOLLET | syscall.EPOLLRDHUP,
 		Fd:     int32(fd),
 	})
 	if err != nil {
@@ -41,7 +33,7 @@ func (p *poll) AddListen(fd int) error {
 
 type event struct {
 	FD   int32
-	Type int32
+	Type uint32
 }
 
 func (p *poll) WaitEvents() ([]event, error) {
@@ -56,13 +48,45 @@ func (p *poll) WaitEvents() ([]event, error) {
 		event := event{
 			FD: epollEvents[i].Fd,
 		}
-		if epollEvents[i].Events == EpollClose {
-			event.Type = EventClose
-		} else {
-			event.Type = EventIn
-		}
+		debugEvent(epollEvents[i].Events)
+		event.Type = epollEvents[i].Events
 		events = append(events, event)
 	}
 
 	return events, nil
+}
+
+func IsReadableEvent(event uint32) bool {
+	if event&syscall.EPOLLIN != 0 {
+		return true
+	}
+	return false
+}
+
+func IsClosedEvent(event uint32) bool {
+	if event&syscall.EPOLLHUP != 0 {
+		return true
+	}
+	if event&syscall.EPOLLRDHUP != 0 {
+		return true
+	}
+	return false
+}
+
+func debugEvent(event uint32) {
+	if event&syscall.EPOLLHUP != 0 {
+		log.Debug("receive EPOLLHUP")
+	}
+	if event&syscall.EPOLLERR != 0 {
+		log.Debug("receive EPOLLERR")
+	}
+	if event&syscall.EPOLLIN != 0 {
+		log.Debug("receive EPOLLIN")
+	}
+	if event&syscall.EPOLLOUT != 0 {
+		log.Debug("receive EPOLLOUT")
+	}
+	if event&syscall.EPOLLRDHUP != 0 {
+		log.Debug("receive EPOLLRDHUP")
+	}
 }
