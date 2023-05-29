@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"tinyredis/log"
 )
@@ -16,11 +17,11 @@ type Server struct {
 	addr     string
 	Handler  Handler
 	listener net.Listener
-	ConnMap  map[int]*Conn
+	ConnMap  sync.Map
 }
 
 func NewServ(addr string, handler Handler) *Server {
-	return &Server{addr: addr, ConnMap: map[int]*Conn{}, Handler: handler}
+	return &Server{addr: addr, ConnMap: sync.Map{}, Handler: handler}
 }
 
 func (s *Server) Run() error {
@@ -56,7 +57,6 @@ func (s *Server) accept() {
 		rawConn.Control(func(fd uintptr) {
 			nfd = int(fd)
 		})
-
 		// 设置为非阻塞状态
 		err = syscall.SetNonblock(nfd, true)
 		if err != nil {
@@ -67,10 +67,10 @@ func (s *Server) accept() {
 			log.Error(err.Error())
 			continue
 		}
-		s.ConnMap[nfd] = &Conn{
+		s.ConnMap.Store(nfd, &Conn{
 			conn:   acceptConn,
 			reader: bufio.NewReader(acceptConn),
-		}
+		})
 		s.Handler.OnConnect(&HandlerMsg{Conn: acceptConn, Fd: nfd})
 	}
 }
@@ -83,7 +83,11 @@ func (s *Server) handler() {
 			continue
 		}
 		for _, e := range events {
-			conn := s.ConnMap[int(e.FD)]
+			connInf, ok := s.ConnMap.Load(int(e.FD))
+			if !ok {
+				continue
+			}
+			conn := connInf.(*Conn)
 			log.Debug("fd有数据到达 fd=%d", e.FD)
 			if IsReadableEvent(e.Type) {
 				err = s.Handler.OnReadable(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
