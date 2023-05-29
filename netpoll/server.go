@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -16,7 +15,7 @@ type Server struct {
 	Poll     *poll
 	addr     string
 	Handler  Handler
-	ListenFd int
+	listener net.Listener
 	ConnMap  map[int]*Conn
 }
 
@@ -25,37 +24,16 @@ func NewServ(addr string, handler Handler) *Server {
 }
 
 func (s *Server) Run() error {
-	listenFD, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return err
 	}
-	err = syscall.SetsockoptInt(listenFD, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-	if err != nil {
-		return err
-	}
-
-	addr, port, err := getIPPort(s.addr)
-	if err != nil {
-		return err
-	}
-	err = syscall.Bind(listenFD, &syscall.SockaddrInet4{
-		Port: port,
-		Addr: addr,
-	})
-	if err != nil {
-		return err
-	}
-	err = syscall.Listen(listenFD, 1024)
-	if err != nil {
-		return err
-	}
-
+	s.listener = listener
 	epollFD, err := syscall.EpollCreate1(0)
 	if err != nil {
 		return err
 	}
 	s.Poll = &poll{EpollFd: epollFD}
-	s.ListenFd = listenFD
 	go s.accept()
 	go s.handler()
 	ch := make(chan int)
@@ -65,10 +43,19 @@ func (s *Server) Run() error {
 
 func (s *Server) accept() {
 	for {
-		nfd, _, err := syscall.Accept(s.ListenFd)
+		acceptConn, err := s.listener.Accept()
 		if err != nil {
 			return
 		}
+		var nfd int
+		rawConn, err := acceptConn.(*net.TCPConn).SyscallConn()
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
+		rawConn.Control(func(fd uintptr) {
+			nfd = int(fd)
+		})
 
 		// 设置为非阻塞状态
 		err = syscall.SetNonblock(nfd, true)
@@ -80,21 +67,11 @@ func (s *Server) accept() {
 			log.Error(err.Error())
 			continue
 		}
-		file := os.NewFile(uintptr(nfd), "")
-		netFD, err := net.FileConn(file)
-		if err != nil {
-			log.Error(err.Error())
-			continue
-		}
-		err = file.Close()
-		if err != nil {
-			log.Error(err.Error())
-		}
 		s.ConnMap[nfd] = &Conn{
-			conn:   netFD.(net.Conn),
-			reader: bufio.NewReader(netFD.(net.Conn)),
+			conn:   acceptConn,
+			reader: bufio.NewReader(acceptConn),
 		}
-		s.Handler.OnConnect(&HandlerMsg{Conn: netFD.(net.Conn), Fd: nfd})
+		s.Handler.OnConnect(&HandlerMsg{Conn: acceptConn, Fd: nfd})
 	}
 }
 
