@@ -5,6 +5,7 @@ import (
 )
 
 type BufIO struct {
+	// todo buf目前会无限增大，后续还是改成ringbuffer
 	buf             []byte
 	batchFetchBytes int64
 	reader          io.Reader
