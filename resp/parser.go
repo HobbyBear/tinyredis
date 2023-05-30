@@ -27,13 +27,13 @@ func parse0(reader *BufIO) *Payload {
 		}
 	}()
 	peekBytes := 0
-	readAfter := 0
-	line, err := reader.PeekBytes(readAfter, '\n')
+	readAlign := 0
+	line, err := reader.PeekBytes(readAlign, '\n')
 	if err != nil {
 		payload.Err = err
 		return payload
 	}
-	readAfter += len(line)
+	readAlign += len(line)
 	length := len(line)
 	if length <= 2 || line[length-2] != '\r' {
 		protocolError(payload, "empty line")
@@ -54,13 +54,13 @@ func parse0(reader *BufIO) *Payload {
 		}
 		payload.Data = MakeIntReply(value)
 	case '$':
-		peekBytes, err = parseBulkString(line, reader, payload, readAfter)
+		peekBytes, err = parseBulkString(line, reader, payload, readAlign)
 		if err != nil {
 			payload.Err = err
 			return payload
 		}
 	case '*':
-		peekBytes, err = parseArray(line, reader, payload, readAfter)
+		peekBytes, err = parseArray(line, reader, payload, readAlign)
 		if err != nil {
 			payload.Err = err
 			return payload
@@ -68,7 +68,7 @@ func parse0(reader *BufIO) *Payload {
 	default:
 		protocolError(payload, "illegal command "+string(line[1:]))
 	}
-	reader.SetReadPosition(peekBytes + readAfter)
+	reader.SetReadPosition(peekBytes + readAlign)
 	return payload
 }
 

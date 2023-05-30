@@ -3,6 +3,7 @@ package netpoll
 import (
 	"fmt"
 	"syscall"
+	"tinyredis/cmd"
 	"tinyredis/log"
 	"tinyredis/resp"
 )
@@ -30,7 +31,10 @@ func (R *RESPHandler) OnReadable(msg *HandlerMsg) error {
 			}
 			break
 		}
-		fmt.Println("获取到命令", string(payload.Data.ToBytes()))
+		mutilReply := payload.Data.(*resp.MultiBulkReply)
+		result := cmd.HandleCmd(mutilReply.Args)
+		msg.Conn.Write(result)
+		fmt.Println("获取到命令", string(payload.Data.ToBytes()), "回复", string(result))
 		fmt.Println("继续读取下一个命令")
 	}
 	return nil

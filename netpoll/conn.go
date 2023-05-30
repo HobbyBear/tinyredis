@@ -11,6 +11,10 @@ type Conn struct {
 	reader *resp.BufIO
 }
 
+func (c *Conn) Write(p []byte) (n int, err error) {
+	return c.conn.Write(p)
+}
+
 func (c *Conn) Close() error {
 	return c.conn.Close()
 }
