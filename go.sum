@@ -1,3 +1,5 @@
+github.com/Allenxuxu/ringbuffer v0.0.11 h1:51J/QakUlldfRBeKFAy81PD0IunxOQehvoBG/EvWT7k=
+github.com/Allenxuxu/ringbuffer v0.0.11/go.mod h1:F2Ela+/miJmKYwnXr3X0+spOmSEwL/iFAEzeUJ4SFMI=
 github.com/ThreeKing2018/gocolor v0.0.0-20190625094635-394e0e24c0d0 h1:fFoYXYxBFRE1exQedMZyFy4P1LHGJH1idubWhVuEJ0I=
 github.com/ThreeKing2018/gocolor v0.0.0-20190625094635-394e0e24c0d0/go.mod h1:dG3aFVtzqgcYBEhVjC139oGBy2Z7C92+iyXNaiViDNM=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

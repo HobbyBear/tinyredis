@@ -1,7 +1,8 @@
 package netpoll
 
 import (
-	"net"
+	"bufio"
+	"fmt"
 	"tinyredis/log"
 )
 
@@ -12,7 +13,7 @@ type Handler interface {
 }
 
 type HandlerMsg struct {
-	Conn net.Conn
+	Conn *Conn
 	Fd   int
 }
 
@@ -28,11 +29,18 @@ func (s SimpleHandler) OnClose(msg *HandlerMsg) {
 }
 
 func (s SimpleHandler) OnReadable(msg *HandlerMsg) error {
-	buf := make([]byte, 1024)
-	n, err := msg.Conn.Read(buf)
+
+	buf := bufio.NewReader(msg.Conn)
+
+	by, err := buf.ReadBytes('\n')
 	if err != nil {
-		return err
+		log.Error(err.Error(), string(by))
 	}
-	log.Info("读取到了数据 data=%s", string(buf[:n]))
+	fmt.Println("读取到 ", string(by))
+	by, err = buf.ReadBytes('\n')
+	if err != nil {
+		log.Error(err.Error(), string(by))
+	}
+	fmt.Println("读取到2 ", string(by))
 	return nil
 }

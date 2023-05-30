@@ -1,12 +1,11 @@
 package netpoll
 
 import (
-	"bufio"
-	"io"
 	"net"
 	"sync"
 	"syscall"
 	"tinyredis/log"
+	"tinyredis/resp"
 )
 
 type Server struct {
@@ -64,11 +63,12 @@ func (s *Server) accept() {
 			log.Error(err.Error())
 			continue
 		}
-		s.ConnMap.Store(nfd, &Conn{
-			conn:   acceptConn,
-			reader: bufio.NewReader(acceptConn),
-		})
-		s.Handler.OnConnect(&HandlerMsg{Conn: acceptConn, Fd: nfd})
+		c := &Conn{
+			conn: acceptConn.(*net.TCPConn),
+		}
+		c.reader = resp.NewBufIO(100, c)
+		s.ConnMap.Store(nfd, c)
+		s.Handler.OnConnect(&HandlerMsg{Conn: c, Fd: nfd})
 	}
 }
 
@@ -85,26 +85,12 @@ func (s *Server) handler() {
 				continue
 			}
 			conn := connInf.(*Conn)
-			log.Debug("fd有数据到达 fd=%d", e.FD)
 			if IsReadableEvent(e.Type) {
-				err = s.Handler.OnReadable(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
-				if err != nil && err != io.EOF {
-					log.Error("read bytes fail err=%s", err)
-					continue
-				}
-				if err == io.EOF {
-					conn.conn.Close()
-					s.Handler.OnClose(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
-					continue
-				}
-				if err != nil {
-					log.Error("read bytes fatal err=%s", err)
-					continue
-				}
+				s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
 			}
 			if IsClosedEvent(e.Type) {
-				conn.conn.Close()
-				s.Handler.OnClose(&HandlerMsg{Conn: conn.conn, Fd: int(e.FD)})
+				conn.Close()
+				s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
 			}
 		}
 	}
