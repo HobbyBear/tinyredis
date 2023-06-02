@@ -2,6 +2,7 @@ package netpoll
 
 import (
 	"net"
+	"runtime"
 	"sync"
 	"syscall"
 	"tinyredis/log"
@@ -9,15 +10,20 @@ import (
 )
 
 type Server struct {
-	Poll     *poll
-	addr     string
-	Handler  Handler
-	listener net.Listener
-	ConnMap  sync.Map
+	Poll       *poll
+	addr       string
+	Handler    Handler
+	listener   net.Listener
+	ConnMap    sync.Map
+	readQueue  *ioQueue
+	writeQueue *ioQueue
 }
 
 func NewServ(addr string, handler Handler) *Server {
-	return &Server{addr: addr, ConnMap: sync.Map{}, Handler: handler}
+	return &Server{addr: addr, ConnMap: sync.Map{}, Handler: handler,
+		readQueue:  newIoQueue(100, readConn, runtime.NumCPU()),
+		writeQueue: newIoQueue(100, writeQueue, runtime.NumCPU()),
+	}
 }
 
 func (s *Server) Run() error {
@@ -64,11 +70,12 @@ func (s *Server) accept() {
 			continue
 		}
 		c := &Conn{
-			conn: acceptConn.(*net.TCPConn),
+			conn:   acceptConn.(*net.TCPConn),
+			midRes: &middleDealRes{req: nil, result: nil},
 		}
 		c.reader = resp.NewBufIO(100, c)
 		s.ConnMap.Store(nfd, c)
-		s.Handler.OnConnect(&HandlerMsg{Conn: c, Fd: nfd})
+		s.Handler.OnConnect(c)
 	}
 }
 
@@ -85,13 +92,31 @@ func (s *Server) handler() {
 				continue
 			}
 			conn := connInf.(*Conn)
-			if IsReadableEvent(e.Type) {
-				s.Handler.OnReadable(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
-			}
+
 			if IsClosedEvent(e.Type) {
 				conn.Close()
-				s.Handler.OnClose(&HandlerMsg{Conn: conn, Fd: int(e.FD)})
+				s.Handler.OnClose(conn)
 			}
+
+			// 按索引进行区分入队
+			if IsReadableEvent(e.Type) {
+				s.readQueue.Put(conn)
+			}
+		}
+		s.readQueue.Wait()
+		readDealedConns := s.readQueue.dealedConn
+		for _, conn := range readDealedConns {
+			// 读-执行-写
+			conn.midRes.result = s.Handler.OnExecCmd(conn.midRes.req)
+		}
+		for _, conn := range readDealedConns {
+			s.writeQueue.Put(conn)
+		}
+		s.writeQueue.Wait()
+		// 清理中间缓存结果
+		writeDealedConns := s.writeQueue.dealedConn
+		for _, conn := range writeDealedConns {
+			conn.midRes = &middleDealRes{}
 		}
 	}
 }

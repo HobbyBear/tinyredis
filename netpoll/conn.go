@@ -6,9 +6,15 @@ import (
 	"tinyredis/resp"
 )
 
+type middleDealRes struct {
+	req    [][]byte
+	result [][]byte
+}
+
 type Conn struct {
 	conn   *net.TCPConn
 	reader *resp.BufIO
+	midRes *middleDealRes
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
