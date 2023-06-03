@@ -1,6 +1,9 @@
 package cmd
 
-import "tinyredis/resp"
+import (
+	"strings"
+	"tinyredis/resp"
+)
 
 type cmdFunc func(args []string) ([]string, byte)
 
@@ -12,10 +15,15 @@ func registerCmdFunc(cmd string, f cmdFunc) {
 
 func RegisterCommands() {
 	registerCmdFunc("set", func(args []string) ([]string, byte) {
+		// todo
 		return []string{"OK"}, resp.SimpleString
 	})
 }
 
 func HandleCmd(args []string) ([]string, byte) {
-	return cmdTable[args[0]](args)
+	exeFunc, ok := cmdTable[strings.ToLower(args[0])]
+	if !ok {
+		return []string{"Not support cmd " + args[0]}, resp.SimpleString
+	}
+	return exeFunc(args)
 }

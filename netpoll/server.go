@@ -73,6 +73,7 @@ func (s *Server) accept() {
 			conn:   acceptConn.(*net.TCPConn),
 			midRes: &middleDealRes{req: nil, result: nil},
 			nfd:    nfd,
+			s:      s,
 		}
 		c.reader = resp.NewBufIO(100, c)
 		s.ConnMap.Store(nfd, c)
@@ -96,6 +97,7 @@ func (s *Server) handler() {
 			if IsClosedEvent(e.Type) {
 				conn.Close()
 				s.Handler.OnClose(conn)
+				continue
 			}
 			if IsReadableEvent(e.Type) {
 				s.readQueue.Put(conn)
