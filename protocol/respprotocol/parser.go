@@ -1,14 +1,15 @@
-package resp
+package respprotocol
 
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"strconv"
+	"tinyredis/netpoll"
 )
 
 type RespConn struct {
-	reader *BufIO
+	reader *netpoll.BufIO
 	writer io.Writer
 }
 
@@ -20,7 +21,7 @@ const (
 	Array        = '*'
 )
 
-func ReadResp(reader *BufIO) ([]string, error) {
+func ReadResp(reader *netpoll.BufIO) ([]string, error) {
 	cmds := make([]string, 0)
 	peekBytes := 0
 	readAlign := 0
@@ -60,35 +61,35 @@ var (
 	lineEndingSlice       = []byte{'\r', '\n'}
 )
 
-func WriteBulkString(writer io.Writer, arg string) error {
-	writer.Write(bulkStringPrefixSlice)
-	writer.Write(append([]byte(arg), lineEndingSlice...))
-	return nil
+func ToBulkStringBytes(arg string) []byte {
+	res := bulkStringPrefixSlice
+	res = append(res, append([]byte(arg), lineEndingSlice...)...)
+	return res
 }
 
-func WriteSimple(writer io.Writer, arg string, t byte) error {
-	writer.Write([]byte{t})
-	writer.Write([]byte(arg))
-	writer.Write(lineEndingSlice)
-	return nil
+func ToSimpleBytes(arg string, t byte) []byte {
+	res := []byte{t}
+	res = append(res, []byte(arg)...)
+	res = append(res, lineEndingSlice...)
+	return res
 }
 
-func WriteArray(writer io.Writer, args ...string) error {
-	writer.Write(arrayPrefixSlice)
-	writer.Write([]byte(strconv.Itoa(len(args))))
-	writer.Write(lineEndingSlice)
+func ToArrayBytes(args ...string) []byte {
+	res := arrayPrefixSlice
+	res = append(res, []byte(strconv.Itoa(len(args)))...)
+	res = append(res, lineEndingSlice...)
 	// 写入批量字符串
 	for _, arg := range args {
-		writer.Write(bulkStringPrefixSlice)
-		writer.Write([]byte(strconv.Itoa(len(arg))))
-		writer.Write(lineEndingSlice)
-		writer.Write([]byte(arg))
-		writer.Write(lineEndingSlice)
+		res = append(res, bulkStringPrefixSlice...)
+		res = append(res, []byte(strconv.Itoa(len(arg)))...)
+		res = append(res, lineEndingSlice...)
+		res = append(res, []byte(arg)...)
+		res = append(res, lineEndingSlice...)
 	}
-	return nil
+	return res
 }
 
-func parseBulkString(header []byte, reader *BufIO, readOffset int) ([]string, int, error) {
+func parseBulkString(header []byte, reader *netpoll.BufIO, readOffset int) ([]string, int, error) {
 	cmds := make([]string, 0)
 	strLen, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	if err != nil || strLen < -1 {
@@ -106,7 +107,7 @@ func parseBulkString(header []byte, reader *BufIO, readOffset int) ([]string, in
 	return cmds, len(body), nil
 }
 
-func parseArray(header []byte, reader *BufIO, readOffset int) ([]string, int, error) {
+func parseArray(header []byte, reader *netpoll.BufIO, readOffset int) ([]string, int, error) {
 	cmds := make([]string, 0)
 	nStrs, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	peekbytes := 0

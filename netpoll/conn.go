@@ -3,21 +3,17 @@ package netpoll
 import (
 	"net"
 	"syscall"
-	"tinyredis/resp"
 )
-
-type middleDealRes struct {
-	req        []string
-	result     []string
-	resultType byte
-}
 
 type Conn struct {
 	s      *Server
 	conn   *net.TCPConn
-	reader *resp.BufIO
-	midRes *middleDealRes
+	reader *BufIO
 	nfd    int
+}
+
+func (c *Conn) GetReader() *BufIO {
+	return c.reader
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {

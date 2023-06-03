@@ -6,23 +6,27 @@ import (
 	"sync"
 	"syscall"
 	"tinyredis/log"
-	"tinyredis/resp"
 )
 
 type Server struct {
 	Poll       *poll
 	addr       string
-	Handler    Handler
+	protocol   Protocol
 	listener   net.Listener
 	ConnMap    sync.Map
-	readQueue  *ioQueue
-	writeQueue *ioQueue
+	readQueue  *ioReadQueue
+	writeQueue *ioWriteQueue
 }
 
-func NewServ(addr string, handler Handler) *Server {
-	return &Server{addr: addr, ConnMap: sync.Map{}, Handler: handler,
-		readQueue:  newIoQueue(100, readConn, runtime.NumCPU()),
-		writeQueue: newIoQueue(100, writeQueue, runtime.NumCPU()),
+func ioWriterHandle(r *Request) error {
+	_, err := r.conn.Write(r.msg.Bytes())
+	return err
+}
+
+func NewServ(addr string, protocol Protocol) *Server {
+	return &Server{addr: addr, ConnMap: sync.Map{}, protocol: protocol,
+		readQueue:  newIoReadQueue(100, protocol.ReadConn, runtime.NumCPU()),
+		writeQueue: newIoWriteQueue(100, ioWriterHandle, runtime.NumCPU()),
 	}
 }
 
@@ -70,14 +74,12 @@ func (s *Server) accept() {
 			continue
 		}
 		c := &Conn{
-			conn:   acceptConn.(*net.TCPConn),
-			midRes: &middleDealRes{req: nil, result: nil},
-			nfd:    nfd,
-			s:      s,
+			conn: acceptConn.(*net.TCPConn),
+			nfd:  nfd,
+			s:    s,
 		}
-		c.reader = resp.NewBufIO(100, c)
+		c.reader = NewBufIO(100, c)
 		s.ConnMap.Store(nfd, c)
-		s.Handler.OnConnect(c)
 	}
 }
 
@@ -96,7 +98,6 @@ func (s *Server) handler() {
 			conn := connInf.(*Conn)
 			if IsClosedEvent(e.Type) {
 				conn.Close()
-				s.Handler.OnClose(conn)
 				continue
 			}
 			if IsReadableEvent(e.Type) {
@@ -104,20 +105,15 @@ func (s *Server) handler() {
 			}
 		}
 		s.readQueue.Wait()
-		readDealedConns := s.readQueue.dealedConn
-		for _, conn := range readDealedConns {
-			conn.midRes.result, conn.midRes.resultType = s.Handler.OnExecCmd(conn.midRes.req)
+		requests := s.readQueue.requests
+		replyMsgs := make([]*Request, 0)
+		for _, request := range requests {
+			replyMsgs = append(replyMsgs, &Request{msg: s.protocol.OnExecCmd(request.msg), conn: request.conn})
 		}
-		for _, conn := range readDealedConns {
-			s.writeQueue.Put(conn)
+		for _, replyMsg := range replyMsgs {
+			s.writeQueue.Put(replyMsg)
 		}
 		s.writeQueue.Wait()
-		// 清理中间缓存结果
-		writeDealedConns := s.writeQueue.dealedConn
-		for _, conn := range writeDealedConns {
-			conn.midRes = &middleDealRes{}
-			s.readQueue.dealedConn = make([]*Conn, 0)
-			s.writeQueue.dealedConn = make([]*Conn, 0)
-		}
+		s.readQueue.Clear()
 	}
 }
