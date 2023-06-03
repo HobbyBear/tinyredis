@@ -3,15 +3,9 @@ package respprotocol
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"strconv"
 	"tinyredis/netpoll"
 )
-
-type RespConn struct {
-	reader *netpoll.BufIO
-	writer io.Writer
-}
 
 const (
 	SimpleString = '+'
@@ -129,7 +123,6 @@ func parseArray(header []byte, reader *netpoll.BufIO, readOffset int) ([]string,
 		}
 		length := len(line)
 		if length < 4 || line[length-2] != '\r' || line[0] != '$' {
-			//protocolError(payload, "illegal bulk string header "+string(line))
 			return nil, peekbytes, fmt.Errorf("illegal bulk string header %s", string(line))
 		}
 		strLen, err := strconv.ParseInt(string(line[1:length-2]), 10, 64)

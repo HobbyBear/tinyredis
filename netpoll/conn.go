@@ -12,10 +12,6 @@ type Conn struct {
 	nfd    int
 }
 
-func (c *Conn) GetReader() *BufIO {
-	return c.reader
-}
-
 func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.conn.Write(p)
 }
