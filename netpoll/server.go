@@ -72,6 +72,7 @@ func (s *Server) accept() {
 		c := &Conn{
 			conn:   acceptConn.(*net.TCPConn),
 			midRes: &middleDealRes{req: nil, result: nil},
+			nfd:    nfd,
 		}
 		c.reader = resp.NewBufIO(100, c)
 		s.ConnMap.Store(nfd, c)
@@ -92,13 +93,10 @@ func (s *Server) handler() {
 				continue
 			}
 			conn := connInf.(*Conn)
-
 			if IsClosedEvent(e.Type) {
 				conn.Close()
 				s.Handler.OnClose(conn)
 			}
-
-			// 按索引进行区分入队
 			if IsReadableEvent(e.Type) {
 				s.readQueue.Put(conn)
 			}
@@ -106,8 +104,7 @@ func (s *Server) handler() {
 		s.readQueue.Wait()
 		readDealedConns := s.readQueue.dealedConn
 		for _, conn := range readDealedConns {
-			// 读-执行-写
-			conn.midRes.result = s.Handler.OnExecCmd(conn.midRes.req)
+			conn.midRes.result, conn.midRes.resultType = s.Handler.OnExecCmd(conn.midRes.req)
 		}
 		for _, conn := range readDealedConns {
 			s.writeQueue.Put(conn)
@@ -117,6 +114,8 @@ func (s *Server) handler() {
 		writeDealedConns := s.writeQueue.dealedConn
 		for _, conn := range writeDealedConns {
 			conn.midRes = &middleDealRes{}
+			s.readQueue.dealedConn = make([]*Conn, 0)
+			s.writeQueue.dealedConn = make([]*Conn, 0)
 		}
 	}
 }

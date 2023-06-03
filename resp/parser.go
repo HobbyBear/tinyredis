@@ -2,103 +2,120 @@ package resp
 
 import (
 	"bytes"
-	"errors"
-	"runtime/debug"
+	"fmt"
+	"io"
 	"strconv"
-	"tinyredis/log"
 )
 
-// Payload stores redis.Reply or error
-type Payload struct {
-	Data Reply
-	Err  error
+type RespConn struct {
+	reader *BufIO
+	writer io.Writer
 }
 
-// ParseStream reads data from io.Reader and send payloads through channel
-func ParseStream(reader *BufIO) *Payload {
-	return parse0(reader)
-}
+const (
+	SimpleString = '+'
+	Integer      = ':'
+	Error        = '-'
+	BulkString   = '$'
+	Array        = '*'
+)
 
-func parse0(reader *BufIO) *Payload {
-	payload := &Payload{}
-	defer func() {
-		if err := recover(); err != nil {
-			log.Error(string(debug.Stack()))
-		}
-	}()
+func ReadResp(reader *BufIO) ([]string, error) {
+	cmds := make([]string, 0)
 	peekBytes := 0
 	readAlign := 0
 	line, err := reader.PeekBytes(readAlign, '\n')
 	if err != nil {
-		payload.Err = err
-		return payload
+		return nil, err
 	}
 	readAlign += len(line)
 	length := len(line)
 	if length <= 2 || line[length-2] != '\r' {
-		protocolError(payload, "empty line")
-		return payload
+		return nil, fmt.Errorf("empty line")
 	}
 	line = bytes.TrimSuffix(line, []byte{'\r', '\n'})
 	switch line[0] {
-	case '+':
-		content := string(line[1:])
-		payload.Data = MakeStatusReply(content)
-	case '-':
-		payload.Data = MakeErrReply(string(line[1:]))
-	case ':':
-		value, err := strconv.ParseInt(string(line[1:]), 10, 64)
+	case SimpleString, Error, Integer:
+		cmds = append(cmds, string(line[1:]))
+	case BulkString:
+		cmds, peekBytes, err = parseBulkString(line, reader, readAlign)
 		if err != nil {
-			protocolError(payload, "illegal number "+string(line[1:]))
-			return payload
+			return nil, err
 		}
-		payload.Data = MakeIntReply(value)
-	case '$':
-		peekBytes, err = parseBulkString(line, reader, payload, readAlign)
+	case Array:
+		cmds, peekBytes, err = parseArray(line, reader, readAlign)
 		if err != nil {
-			payload.Err = err
-			return payload
-		}
-	case '*':
-		peekBytes, err = parseArray(line, reader, payload, readAlign)
-		if err != nil {
-			payload.Err = err
-			return payload
+			return nil, err
 		}
 	default:
-		protocolError(payload, "illegal command "+string(line[1:]))
+		return nil, fmt.Errorf("illegle command")
 	}
 	reader.SetReadPosition(peekBytes + readAlign)
-	return payload
+	return cmds, nil
 }
 
-func parseBulkString(header []byte, reader *BufIO, payload *Payload, readOffset int) (int, error) {
+var (
+	arrayPrefixSlice      = []byte{'*'}
+	bulkStringPrefixSlice = []byte{'$'}
+	lineEndingSlice       = []byte{'\r', '\n'}
+)
+
+func WriteBulkString(writer io.Writer, arg string) error {
+	writer.Write(bulkStringPrefixSlice)
+	writer.Write(append([]byte(arg), lineEndingSlice...))
+	return nil
+}
+
+func WriteSimple(writer io.Writer, arg string, t byte) error {
+	writer.Write([]byte{t})
+	writer.Write([]byte(arg))
+	writer.Write(lineEndingSlice)
+	return nil
+}
+
+func WriteArray(writer io.Writer, args ...string) error {
+	writer.Write(arrayPrefixSlice)
+	writer.Write([]byte(strconv.Itoa(len(args))))
+	writer.Write(lineEndingSlice)
+	// 写入批量字符串
+	for _, arg := range args {
+		writer.Write(bulkStringPrefixSlice)
+		writer.Write([]byte(strconv.Itoa(len(arg))))
+		writer.Write(lineEndingSlice)
+		writer.Write([]byte(arg))
+		writer.Write(lineEndingSlice)
+	}
+	return nil
+}
+
+func parseBulkString(header []byte, reader *BufIO, readOffset int) ([]string, int, error) {
+	cmds := make([]string, 0)
 	strLen, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	if err != nil || strLen < -1 {
-		protocolError(payload, "illegal bulk string header: "+string(header))
-		return 0, nil
+		return cmds, 0, fmt.Errorf("illegal bulk string header: %s", string(header))
 	} else if strLen == -1 {
-		payload.Data = MakeNullBulkReply()
-		return 0, nil
+		//payload.Data = MakeNullBulkReply()
+		return cmds, 0, fmt.Errorf("unkonw")
 	}
 	body := make([]byte, strLen+2)
 	datalen, err := reader.Peek(readOffset, len(body))
 	if err != nil || len(datalen) < len(body) {
-		return len(datalen), err
+		return cmds, len(datalen), err
 	}
-	payload.Data = MakeBulkReply(body[:len(body)-2])
-	return len(body), nil
+	cmds = append(cmds, string(body[:len(body)-2]))
+	return cmds, len(body), nil
 }
 
-func parseArray(header []byte, reader *BufIO, payload *Payload, readOffset int) (int, error) {
+func parseArray(header []byte, reader *BufIO, readOffset int) ([]string, int, error) {
+	cmds := make([]string, 0)
 	nStrs, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	peekbytes := 0
 	if err != nil || nStrs < 0 {
-		protocolError(payload, "illegal array header "+string(header[1:]))
-		return 0, nil
+		//protocolError(payload, "illegal array header "+string(header[1:]))
+		return nil, 0, fmt.Errorf("illegal array header %s", string(header[1:]))
 	} else if nStrs == 0 {
-		payload.Data = MakeEmptyMultiBulkReply()
-		return 0, nil
+		//payload.Data = MakeEmptyMultiBulkReply()
+		return nil, 0, fmt.Errorf("nil err")
 	}
 	lines := make([][]byte, 0, nStrs)
 	for i := int64(0); i < nStrs; i++ {
@@ -107,17 +124,17 @@ func parseArray(header []byte, reader *BufIO, payload *Payload, readOffset int) 
 		peekbytes += len(line)
 		readOffset += len(line)
 		if err != nil {
-			return peekbytes, err
+			return nil, peekbytes, err
 		}
 		length := len(line)
 		if length < 4 || line[length-2] != '\r' || line[0] != '$' {
-			protocolError(payload, "illegal bulk string header "+string(line))
-			break
+			//protocolError(payload, "illegal bulk string header "+string(line))
+			return nil, peekbytes, fmt.Errorf("illegal bulk string header %s", string(line))
 		}
 		strLen, err := strconv.ParseInt(string(line[1:length-2]), 10, 64)
 		if err != nil || strLen < -1 {
-			protocolError(payload, "illegal bulk string length "+string(line))
-			break
+			//protocolError(payload, "illegal bulk string length "+string(line))
+			return nil, peekbytes, fmt.Errorf("illegal bulk string length" + string(line))
 		} else if strLen == -1 {
 			lines = append(lines, []byte{})
 		} else {
@@ -125,17 +142,10 @@ func parseArray(header []byte, reader *BufIO, payload *Payload, readOffset int) 
 			peekbytes += len(body)
 			readOffset += len(body)
 			if err != nil {
-				return peekbytes, err
+				return nil, peekbytes, err
 			}
-			lines = append(lines, body[:len(body)-2])
+			cmds = append(cmds, string(body[:len(body)-2]))
 		}
 	}
-
-	payload.Data = MakeMultiBulkReply(lines)
-	return peekbytes, nil
-}
-
-func protocolError(payload *Payload, msg string) {
-	err := errors.New("protocol error: " + msg)
-	payload.Err = err
+	return cmds, peekbytes, nil
 }

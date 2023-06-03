@@ -44,11 +44,11 @@ type Logger struct {
 
 // 对外初使日志
 func New(w io.Writer, isColor bool) ColorLogger {
-	return InitWriteLogger(w, 2, LSHORTFILE_FLAG, isColor)
+	return InitWriteLogger(w, 3, LSHORTFILE_FLAG, isColor)
 }
 
 // 默认的日志
-var defaultLogger = InitWriteLogger(os.Stdout, 2, DEFAULT_FLAG, true)
+var defaultLogger = InitWriteLogger(os.Stdout, 3, LSHORTFILE_FLAG, true)
 
 // 初使写入日志,写入到一个buffer里
 func InitWriteLogger(w io.Writer, depth int, flag int, isColor bool) ColorLogger {

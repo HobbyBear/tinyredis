@@ -3,7 +3,7 @@ package netpoll
 type Handler interface {
 	OnConnect(conn *Conn)
 	OnClose(conn *Conn)
-	OnExecCmd(cmd [][]byte) [][]byte
+	OnExecCmd(cmd []string) ([]string, byte)
 }
 
 //type SimpleHandler struct {

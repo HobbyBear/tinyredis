@@ -19,29 +19,23 @@ func (R *RESPHandler) OnClose(conn *Conn) {
 	log.Info("连接关闭")
 }
 
-func (R *RESPHandler) DeCodeRespProtocal(conn *Conn) {
-
-}
-
-func (R *RESPHandler) OnExecCmd(args [][]byte) [][]byte {
-	fmt.Println("获取到命令", string(args[0]))
-	result := cmd.HandleCmd(args)
-	return result
+func (R *RESPHandler) OnExecCmd(args []string) ([]string, byte) {
+	fmt.Println("获取到命令 ", args)
+	return cmd.HandleCmd(args)
 }
 
 func readConn(c *Conn) bool {
 	reader := c.reader
-	payload := resp.ParseStream(reader)
-	if payload.Err != nil {
-		log.Debug("读取到了错误 err=%s ", payload.Err.Error())
-		if payload.Err != syscall.EAGAIN {
-			log.Info("连接读取错误,关闭连接 err=%s", payload.Err.Error())
+	cmds, err := resp.ReadResp(reader)
+	if err != nil {
+		log.Debug("读取到了错误 err=%s ", err.Error())
+		if err != syscall.EAGAIN {
+			log.Info("连接读取错误,关闭连接 err=%s", err.Error())
 			c.Close()
 		}
 		return false
 	}
-	mutilReply := payload.Data.(*resp.MultiBulkReply)
-	c.midRes.req = mutilReply.Args
+	c.midRes.req = cmds
 	return true
 }
 
@@ -49,29 +43,15 @@ func writeQueue(c *Conn) bool {
 	if len(c.midRes.result) == 0 {
 		return false
 	}
-	_, err := c.Write([]byte("+OK"))
-	if err != nil {
-		log.Error(err.Error())
-		return false
+	switch c.midRes.resultType {
+	case resp.Error, resp.SimpleString, resp.Integer:
+		resp.WriteSimple(c, c.midRes.result[0], c.midRes.resultType)
+	case resp.BulkString:
+		resp.WriteBulkString(c, c.midRes.result[0])
+	case resp.Array:
+		resp.WriteArray(c, c.midRes.result...)
+	default:
+		panic("resp type is not valid ")
 	}
 	return true
 }
-
-//func (R *RESPHandler) OnExecCmd(conn *Conn) error {
-//	reader := conn.reader
-//	payload := resp.ParseStream(reader)
-//	if payload.Err != nil {
-//		log.Debug("读取到了错误 err=%s ", payload.Err.Error())
-//		if payload.Err != syscall.EAGAIN {
-//			log.Info("连接读取错误,关闭连接 err=%s", payload.Err.Error())
-//			conn.Close()
-//		}
-//		return nil
-//	}
-//	mutilReply := payload.Data.(*resp.MultiBulkReply)
-//	result := cmd.HandleCmd(mutilReply.Args)
-//	conn.Write(result)
-//	fmt.Println("获取到命令", string(payload.Data.ToBytes()), "回复", string(result))
-//	fmt.Println("继续读取下一个命令")
-//	return nil
-//}

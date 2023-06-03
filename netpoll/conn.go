@@ -7,14 +7,17 @@ import (
 )
 
 type middleDealRes struct {
-	req    [][]byte
-	result [][]byte
+	req        []string
+	result     []string
+	resultType byte
 }
 
 type Conn struct {
+	s      *Server
 	conn   *net.TCPConn
 	reader *resp.BufIO
 	midRes *middleDealRes
+	nfd    int
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
@@ -22,6 +25,7 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 }
 
 func (c *Conn) Close() error {
+	c.s.ConnMap.Delete(c.nfd)
 	return c.conn.Close()
 }
 
