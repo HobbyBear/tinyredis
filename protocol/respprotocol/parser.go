@@ -45,7 +45,7 @@ func ReadResp(reader *netpoll.RingBuffer) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("illegle command")
 	}
-	reader.SetReadPosition(peekBytes + readAlign)
+	reader.SetNextReadPosition(peekBytes + readAlign)
 	return cmds, nil
 }
 
