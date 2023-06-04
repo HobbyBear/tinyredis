@@ -15,7 +15,7 @@ const (
 	Array        = '*'
 )
 
-func ReadResp(reader *netpoll.BufIO) ([]string, error) {
+func ReadResp(reader *netpoll.RingBuffer) ([]string, error) {
 	cmds := make([]string, 0)
 	peekBytes := 0
 	readAlign := 0
@@ -83,7 +83,7 @@ func ToArrayBytes(args ...string) []byte {
 	return res
 }
 
-func parseBulkString(header []byte, reader *netpoll.BufIO, readOffset int) ([]string, int, error) {
+func parseBulkString(header []byte, reader *netpoll.RingBuffer, readOffset int) ([]string, int, error) {
 	cmds := make([]string, 0)
 	strLen, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	if err != nil || strLen < -1 {
@@ -101,7 +101,7 @@ func parseBulkString(header []byte, reader *netpoll.BufIO, readOffset int) ([]st
 	return cmds, len(body), nil
 }
 
-func parseArray(header []byte, reader *netpoll.BufIO, readOffset int) ([]string, int, error) {
+func parseArray(header []byte, reader *netpoll.RingBuffer, readOffset int) ([]string, int, error) {
 	cmds := make([]string, 0)
 	nStrs, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	peekbytes := 0
@@ -127,7 +127,6 @@ func parseArray(header []byte, reader *netpoll.BufIO, readOffset int) ([]string,
 		}
 		strLen, err := strconv.ParseInt(string(line[1:length-2]), 10, 64)
 		if err != nil || strLen < -1 {
-			//protocolError(payload, "illegal bulk string length "+string(line))
 			return nil, peekbytes, fmt.Errorf("illegal bulk string length" + string(line))
 		} else if strLen == -1 {
 			lines = append(lines, []byte{})

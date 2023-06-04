@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-type ioReadHandle func(c *BufIO) (ProtocolMsg, error)
+type ioReadHandle func(c *RingBuffer) (ProtocolMsg, error)
 
 type ioReadQueue struct {
 	seq      atomic.Int32
@@ -35,15 +35,15 @@ func newIoReadQueue(perChannelLen int, handle ioReadHandle, goNum int) *ioReadQu
 		go func() {
 			for conn := range connlist {
 				for {
-					// todo
 					msg, err := handle(conn.reader)
-					if msg == nil || err == syscall.EAGAIN {
-						break
-					}
-					if err != nil {
+					if err != nil && err != syscall.EAGAIN {
 						conn.Close()
 						break
 					}
+					if msg == nil || err == syscall.EAGAIN {
+						break
+					}
+
 					if err == nil {
 						res.requests = append(res.requests, &Request{msg: msg, conn: conn})
 					}

@@ -5,6 +5,6 @@ type ProtocolMsg interface {
 }
 
 type Protocol interface {
-	ReadConn(c *BufIO) (ProtocolMsg, error)
+	ReadConn(c *RingBuffer) (ProtocolMsg, error)
 	OnExecCmd(msg ProtocolMsg) ProtocolMsg
 }

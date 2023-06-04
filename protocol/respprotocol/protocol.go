@@ -35,7 +35,7 @@ func (r *Msg) Bytes() []byte {
 type Protocol struct {
 }
 
-func (r *Protocol) ReadConn(reader *netpoll.BufIO) (netpoll.ProtocolMsg, error) {
+func (r *Protocol) ReadConn(reader *netpoll.RingBuffer) (netpoll.ProtocolMsg, error) {
 	cmds, err := ReadResp(reader)
 	if err != nil {
 		log.Debug("读取到了错误 err=%s ", err.Error())

@@ -18,7 +18,7 @@ var Instance = &Protocol{}
 type Protocol struct {
 }
 
-func (p *Protocol) ReadConn(c *netpoll.BufIO) (netpoll.ProtocolMsg, error) {
+func (p *Protocol) ReadConn(c *netpoll.RingBuffer) (netpoll.ProtocolMsg, error) {
 	data, err := c.PeekBytes(0, 's')
 	if err != nil {
 		return nil, err

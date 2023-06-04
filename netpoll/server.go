@@ -78,7 +78,7 @@ func (s *Server) accept() {
 			nfd:  nfd,
 			s:    s,
 		}
-		c.reader = NewBufIO(100, c)
+		c.reader = NewRingBuffer(100, c)
 		s.ConnMap.Store(nfd, c)
 	}
 }

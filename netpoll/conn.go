@@ -8,7 +8,7 @@ import (
 type Conn struct {
 	s      *Server
 	conn   *net.TCPConn
-	reader *BufIO
+	reader *RingBuffer
 	nfd    int
 }
 
