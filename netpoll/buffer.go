@@ -18,29 +18,29 @@ func NewRingBuffer(size int, rd io.Reader) *RingBuffer {
 	return &RingBuffer{buf: make([]byte, size), batchFetchBytes: 1024, reader: rd}
 }
 
-func (b *RingBuffer) UnReadSize() int {
-	return b.unReadSize
+func (r *RingBuffer) UnReadSize() int {
+	return r.unReadSize
 }
 
-func (b *RingBuffer) fill() error {
-	if b.unReadSize == len(b.buf) {
+func (r *RingBuffer) fill() error {
+	if r.unReadSize == len(r.buf) {
 		return fmt.Errorf("the unReadSize is over range the buffer len")
 	}
-	readLen := int(math.Min(float64(b.batchFetchBytes), float64(len(b.buf)-b.unReadSize)))
+	readLen := int(math.Min(float64(r.batchFetchBytes), float64(len(r.buf)-r.unReadSize)))
 	buf := make([]byte, readLen)
-	readBytes, err := b.reader.Read(buf)
+	readBytes, err := r.reader.Read(buf)
 	if readBytes > 0 {
-		end := b.r + b.unReadSize + readBytes
-		if end < len(b.buf) {
-			copy(b.buf[b.r+b.unReadSize:], buf[:readBytes])
+		end := r.r + r.unReadSize + readBytes
+		if end < len(r.buf) {
+			copy(r.buf[r.r+r.unReadSize:], buf[:readBytes])
 		} else {
-			writePos := (b.r + b.unReadSize) % len(b.buf)
-			n := copy(b.buf[writePos:], buf[:readBytes])
+			writePos := (r.r + r.unReadSize) % len(r.buf)
+			n := copy(r.buf[writePos:], buf[:readBytes])
 			if n < readBytes {
-				copy(b.buf[:end%len(b.buf)], buf[len(b.buf)-writePos:])
+				copy(r.buf[:end%len(r.buf)], buf[len(r.buf)-writePos:])
 			}
 		}
-		b.unReadSize += readBytes
+		r.unReadSize += readBytes
 		return nil
 	}
 	if err != nil {
@@ -49,16 +49,16 @@ func (b *RingBuffer) fill() error {
 	return nil
 }
 
-func (b *RingBuffer) Peek(readOffsetBack, n int) ([]byte, error) {
-	if n > len(b.buf) {
+func (r *RingBuffer) Peek(readOffsetBack, n int) ([]byte, error) {
+	if n > len(r.buf) {
 		return nil, fmt.Errorf("the unReadSize is over range the buffer len")
 	}
 peek:
-	if n <= b.UnReadSize()-readOffsetBack {
-		readPos := (b.r + readOffsetBack) % len(b.buf)
-		return b.dataByPos(readPos, (b.r+readOffsetBack+n-1)%len(b.buf)), nil
+	if n <= r.UnReadSize()-readOffsetBack {
+		readPos := (r.r + readOffsetBack) % len(r.buf)
+		return r.dataByPos(readPos, (r.r+readOffsetBack+n-1)%len(r.buf)), nil
 	}
-	err := b.fill()
+	err := r.fill()
 	if err != nil {
 		return nil, err
 	}
@@ -66,29 +66,29 @@ peek:
 }
 
 // dataByPos 返回索引值在start和end之间的数据，闭区间
-func (b *RingBuffer) dataByPos(start int, end int) []byte {
+func (r *RingBuffer) dataByPos(start int, end int) []byte {
 	// 因为环形缓冲区原因，所以末位置索引值有可能小于开始位置索引
 	if end < start {
-		return append(b.buf[start:], b.buf[:end+1]...)
+		return append(r.buf[start:], r.buf[:end+1]...)
 	}
-	return b.buf[start : end+1]
+	return r.buf[start : end+1]
 }
 
-func (b *RingBuffer) PeekBytes(readOffsetBack int, delim byte) ([]byte, error) {
+func (r *RingBuffer) PeekBytes(readOffsetBack int, delim byte) ([]byte, error) {
 peek:
-	for i := 0; i < b.unReadSize-readOffsetBack; i++ {
-		if b.buf[(i+b.r+readOffsetBack)%len(b.buf)] == delim {
-			return b.dataByPos((b.r+readOffsetBack)%len(b.buf), (i+b.r+readOffsetBack)%len(b.buf)), nil
+	for i := 0; i < r.unReadSize-readOffsetBack; i++ {
+		if r.buf[(i+r.r+readOffsetBack)%len(r.buf)] == delim {
+			return r.dataByPos((r.r+readOffsetBack)%len(r.buf), (i+r.r+readOffsetBack)%len(r.buf)), nil
 		}
 	}
-	err := b.fill()
+	err := r.fill()
 	if err != nil {
 		return nil, err
 	}
 	goto peek
 }
 
-func (b *RingBuffer) SetNextReadPosition(n int) {
-	b.r = (b.r + n) % len(b.buf)
-	b.unReadSize -= n
+func (r *RingBuffer) AddReadPosition(n int) {
+	r.r = (r.r + n) % len(r.buf)
+	r.unReadSize -= n
 }

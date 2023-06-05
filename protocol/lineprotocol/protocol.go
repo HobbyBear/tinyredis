@@ -23,7 +23,7 @@ func (p *Protocol) ReadConn(c *netpoll.RingBuffer) (netpoll.ProtocolMsg, error) 
 	if err != nil {
 		return nil, err
 	}
-	c.SetNextReadPosition(len(data))
+	c.AddReadPosition(len(data))
 	fmt.Println("收到了消息", string(data))
 	return &Msg{line: string(data[:len(data)-2])}, nil
 }
