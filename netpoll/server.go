@@ -1,33 +1,22 @@
 package netpoll
 
 import (
+	"fmt"
 	"net"
-	"runtime"
 	"sync"
 	"syscall"
 	"tinyredis/log"
 )
 
 type Server struct {
-	Poll       *poll
-	addr       string
-	protocol   Protocol
-	listener   net.Listener
-	ConnMap    sync.Map
-	readQueue  *ioReadQueue
-	writeQueue *ioWriteQueue
+	Poll     *poll
+	addr     string
+	listener net.Listener
+	ConnMap  sync.Map
 }
 
-func ioWriterHandle(r *Request) error {
-	_, err := r.conn.Write(r.msg.Bytes())
-	return err
-}
-
-func NewServ(addr string, protocol Protocol) *Server {
-	return &Server{addr: addr, ConnMap: sync.Map{}, protocol: protocol,
-		readQueue:  newIoReadQueue(100, protocol.ReadConn, runtime.NumCPU()),
-		writeQueue: newIoWriteQueue(100, ioWriterHandle, runtime.NumCPU()),
-	}
+func NewServ(addr string) *Server {
+	return &Server{addr: addr, ConnMap: sync.Map{}}
 }
 
 func (s *Server) Run() error {
@@ -78,7 +67,6 @@ func (s *Server) accept() {
 			nfd:  nfd,
 			s:    s,
 		}
-		c.reader = NewRingBuffer(100, c)
 		s.ConnMap.Store(nfd, c)
 	}
 }
@@ -101,19 +89,14 @@ func (s *Server) handler() {
 				continue
 			}
 			if IsReadableEvent(e.Type) {
-				s.readQueue.Put(conn)
+				buf := make([]byte, 1024)
+				rd, err := conn.Read(buf)
+				if err != nil && err != syscall.EAGAIN {
+					conn.Close()
+					continue
+				}
+				fmt.Println("收到消息", string(buf[:rd]))
 			}
 		}
-		s.readQueue.Wait()
-		requests := s.readQueue.requests
-		replyMsgs := make([]*Request, 0)
-		for _, request := range requests {
-			replyMsgs = append(replyMsgs, &Request{msg: s.protocol.OnExecCmd(request.msg), conn: request.conn})
-		}
-		for _, replyMsg := range replyMsgs {
-			s.writeQueue.Put(replyMsg)
-		}
-		s.writeQueue.Wait()
-		s.readQueue.Clear()
 	}
 }

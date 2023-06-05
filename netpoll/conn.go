@@ -6,10 +6,9 @@ import (
 )
 
 type Conn struct {
-	s      *Server
-	conn   *net.TCPConn
-	reader *RingBuffer
-	nfd    int
+	s    *Server
+	conn *net.TCPConn
+	nfd  int
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
