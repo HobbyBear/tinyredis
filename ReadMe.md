@@ -1,7 +1,7 @@
 ![img.png](img.png)
 
 
->  本系列主要是为了对redis的网络模型和集群原理进行学习，我会用golang实现一个reactor网络模型，并实现对redis协议的解析。
+>  本系列主要是为了对redis的网络模型进行学习，我会用golang实现一个reactor网络模型，并实现对redis协议的解析。
 
 
 

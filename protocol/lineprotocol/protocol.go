@@ -19,7 +19,7 @@ type Protocol struct {
 }
 
 func (p *Protocol) ReadConn(c *netpoll.RingBuffer) (netpoll.ProtocolMsg, error) {
-	data, err := c.PeekBytes(0, 's')
+	data, err := c.PeekBytes(0, '\n')
 	if err != nil {
 		return nil, err
 	}
